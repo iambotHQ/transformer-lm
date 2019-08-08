@@ -1,36 +1,52 @@
 import json
 from pathlib import Path
-from typing import List, Tuple
+from typing import *
 
+import fire
 import sentencepiece as spm
 import torch
 import numpy as np
 import fire
 from .fire_utils import only_allow_defined_args
 
-from .model import Model, HParams
 from .common import END_OF_LINE, END_OF_TEXT
+from .fire_utils import only_allow_defined_args
+from .model import HParams, Model
 
 
 class ModelWrapper:
     END_OF_LINE = END_OF_LINE
     END_OF_TEXT = END_OF_TEXT
 
-    def __init__(self, model: Model, sp_model: spm.SentencePieceProcessor):
+    def __init__(
+        self,
+        model: Model,
+        sp_model: spm.SentencePieceProcessor,
+        device: Union[str, torch.device],
+    ):
         self.model = model
         self.sp_model = sp_model
+        self.device = device
 
     @classmethod
-    def load(cls, root: Path):
+    def load(
+        cls,
+        root: Path,
+        device: Union[str, torch.device],
+        text_gen_mode: bool = False,
+        sp_model: Optional[spm.SentencePieceProcessor] = None,
+    ):
         sp_model = spm.SentencePieceProcessor()
-        sp_model.load(str(root / 'sp.model'))
-        hparams = json.loads((root / 'params.json').read_text())['hparams']
-        hparams.setdefault('n_hidden', hparams['n_embed'])
-        model = Model(HParams(**hparams))
-        state = torch.load(root / 'model.pt', map_location='cpu')
-        state_dict = fixed_state_dict(state['state_dict'])
+        sp_model.load(str(root / "sp.model"))
+        hparams = json.loads((root / "params.json").read_text())[
+            "hparams"
+        ]
+        hparams.setdefault("n_hidden", hparams["n_embed"])
+        model = Model(HParams(**hparams), text_gen_mode).to(device)
+        state = torch.load(root / "model.pt", map_location=device)
+        state_dict = fixed_state_dict(state["state_dict"])
         model.load_state_dict(state_dict)
-        return cls(model, sp_model)
+        return cls(model, sp_model, device)
 
     def tokenize(self, s: str) -> List[str]:
         return self.sp_model.EncodeAsPieces(s)
@@ -50,31 +66,87 @@ class ModelWrapper:
         """
         assert len(tokens) <= self.model.hparams.n_ctx  # TODO
         ids = [self.token_to_id(t) for t in tokens]
-        ctx = torch.LongTensor(ids).unsqueeze(0)
+        ctx = torch.LongTensor(ids).unsqueeze(0).to(self.device)
         with torch.no_grad():
-            logits = self.model(ctx)['logits'].squeeze(0)
+            logits = self.model(ctx)["logits"].squeeze(0)
             return torch.log_softmax(logits, dim=1)
 
     def get_occurred_log_probs(
-            self, tokens: List[str]) -> List[Tuple[float, str]]:
+        self, tokens: List[str]
+    ) -> List[Tuple[float, str]]:
         """ Return a list of log probs of actually occurred tokens,
         starting from the second.
         """
         log_probs = self.get_log_probs(tokens)
-        out = []
-        for idx, token in enumerate(tokens[1:]):
-            out.append((float(log_probs[idx, self.token_to_id(token)]), token))
-        return out
+        return [
+            (float(log_probs[idx, self.token_to_id(token)]), token)
+            for idx, token in enumerate(tokens[1:])
+        ]
 
     def get_next_top_k(
-            self, tokens: List[str], top_k: int) -> List[Tuple[float, str]]:
+        self, tokens: List[str], top_k: int
+    ) -> List[Tuple[float, str]]:
         """ Return a list of top k tuples of log prob and token,
         for what would come after the last token.
         """
         next_log_probs = self.get_log_probs(tokens)[-1]
-        return sorted([(float(next_log_probs[i]), self.id_to_token(i))
-                       for i in next_log_probs.argsort()[-top_k:]],
-                      reverse=True)
+        return sorted(
+            (
+                (float(next_log_probs[i]), self.id_to_token(i))
+                for i in next_log_probs.argsort()[-top_k:]
+            ),
+            reverse=True,
+        )
+
+    def generate_tokens(
+        self,
+        tokens_prefix: List[str],
+        tokens_to_generate: int,
+        top_k: int,
+        no_eot: bool = False,
+        stop_on_eot: bool = False,
+    ) -> List[str]:
+        tokens = ["<endoftext>", *list(tokens_prefix)]
+        tok_print = lambda tok: print(tok, end="", flush=True)
+        tok_print(f"{self.sp_model.DecodePieces(tokens_prefix)} |")
+
+        ending_puncts = "?!)])>:;}.,"
+        starting_puncts = "([{<"
+
+        for _ in range(tokens_to_generate):
+            ntk = self.get_next_top_k(tokens, top_k)
+            probs = torch.tensor([a[0] for a in ntk]).exp()
+            probs /= probs.sum()
+            next_token_n = int(probs.multinomial(1))
+            next_token = ntk[next_token_n][1]
+
+            del probs
+            del next_token_n
+            del ntk
+
+            if next_token in [END_OF_TEXT]:
+                if no_eot:
+                    continue
+                if stop_on_eot:
+                    break
+
+            tokens.append(next_token)
+
+            normalized_token: str = next_token.replace(
+                END_OF_LINE, "\n"
+            ).replace(END_OF_TEXT, "\n").replace("▁", " ")
+            if (
+                len(normalized_token) > 1
+                and normalized_token[1] in ending_puncts
+            ) or (
+                len(tokens) > 1
+                and tokens[-2].replace("▁", "") in starting_puncts
+            ):
+                normalized_token = normalized_token.replace(" ", "")
+            tok_print(normalized_token)
+        print()
+
+        return tokens
 
     def generate_tokens(self, tokens_prefix: List[str], tokens_to_generate: int, top_k: int) -> List[str]:
 
@@ -100,9 +172,11 @@ class ModelWrapper:
 
 
 def fixed_state_dict(state_dict):
-    if all(k.startswith('module.') for k in state_dict):
+    if all(k.startswith("module.") for k in state_dict):
         # legacy multi-GPU format
-        state_dict = {k[len('module.'):]: v for k, v in state_dict.items()}
+        state_dict = {
+            k[len("module.") :]: v for k, v in state_dict.items()
+        }
     return state_dict
 
 def gen_main(model_path, prefix, tokens_to_generate=42, top_k=8):

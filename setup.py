@@ -1,15 +1,16 @@
 from setuptools import setup, find_packages
 
 setup(
-    version='0.1.0',
-    name='lm',
+    version="0.1.0",
+    name="lm",
     packages=find_packages(),
     install_requires=[
         # only minimal inference requirements listed
-        'attrs',
-        'numpy',
-        'sentencepiece',
-        'torch',
+        "attrs",
+        "numpy",
+        "sentencepiece",
+        "torch",
+        "tensorboardX",
     ],
     entry_points={
         'console_scripts': [

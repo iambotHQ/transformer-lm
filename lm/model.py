@@ -2,6 +2,7 @@
 OpenAI's GPT-2 ported to PyTorch.
 """
 import math
+from typing import *
 
 import attr
 import torch
@@ -21,15 +22,17 @@ class HParams:
 
 
 class Model(nn.Module):
-    def __init__(self, hparams: HParams):
+    def __init__(self, hparams: HParams, text_gen_mode: bool = False):
         super().__init__()
+        self._text_gen_mode = text_gen_mode
         self.hparams = hparams
         self.wpe = nn.Embedding(hparams.n_ctx, hparams.n_embed)
         nn.init.normal_(self.wpe.weight, std=0.01)
         self.wte = nn.Embedding(hparams.n_vocab, hparams.n_embed)
         nn.init.normal_(self.wte.weight, std=0.02)
         self.blocks = nn.ModuleList(
-            [Block(hparams) for _ in range(hparams.n_layer)])
+            [Block(hparams) for _ in range(hparams.n_layer)]
+        )
         self.ln_f = Norm(self.hparams.n_hidden)
         if hparams.n_hidden != hparams.n_embed:
             self.in_proj = Conv1D(hparams.n_embed, hparams.n_hidden)
@@ -41,30 +44,40 @@ class Model(nn.Module):
         # Embedding
         past_length = 0 if past is None else past.shape[-2]
         batch_size, n_ctx = x.shape
-        position = position_for(batch_size, n_ctx, past_length, x.device)
+        position = position_for(
+            batch_size, n_ctx, past_length, x.device
+        )
         h = self.wte(x) + self.wpe(position)
         assert h.shape == (batch_size, n_ctx, self.hparams.n_embed)
         if self.in_proj:
             h = self.in_proj(h)
+
         # Transformer
-        presents = []
+        # presents = []
         for i, block in enumerate(self.blocks):
             if self.hparams.gradient_checkpointing:
                 h, present = torch.utils.checkpoint.checkpoint(block, h, past[:, i] if past is not None else None)
             else:
                 h, present = block(h, past=past[:, i] if past is not None else None)
-            presents.append(present)
+            # presents.append(present)
         h = self.ln_f(h)
+
         if self.out_proj:
             h = self.out_proj(h)
-        # Output logits
-        h_flat = h.reshape([batch_size * n_ctx, self.hparams.n_embed])
-        logits = torch.matmul(h_flat, self.wte.weight.t())
-        logits = logits.reshape([batch_size, n_ctx, self.hparams.n_vocab])
-        return {
-            'presents': torch.stack(tuple(presents), dim=1),
-            'logits': logits,
-        }
+
+        output = {"hidden": h}
+
+        if self._text_gen_mode:
+            h_flat = h.reshape(
+                [batch_size * n_ctx, self.hparams.n_embed]
+            )
+            logits = torch.matmul(h_flat, self.wte.weight.t())
+            logits = logits.reshape(
+                [batch_size, n_ctx, self.hparams.n_vocab]
+            )
+            output["logits"] = logits
+
+        return output
 
 
 class Block(nn.Module):
@@ -86,6 +99,7 @@ class Block(nn.Module):
 class Norm(nn.Module):
     """ Normalize to mean = 0, std = 1, then do a diagonal affine transform.
     """
+
     def __init__(self, n_features, *, dim=-1, epsilon=1e-5):
         super().__init__()
         self.n_features = n_features
@@ -123,29 +137,38 @@ class Attention(nn.Module):
         self.c_proj = Conv1D(hparams.n_hidden, hparams.n_hidden)
 
     def forward(self, x, past):
-        assert len(x.shape) == 3  # [batch, sequence, features]
+        assert len(x.shape) == 3
         assert x.shape[-1] == self.hparams.n_hidden
+
         if past is not None:
-            # Should be [batch, 2, heads, sequence, features], where 2 is [k, v]
             assert len(past.shape) == 5
             assert past.shape[-1] == self.hparams.n_hidden
+
         c = self.c_attn(x)
-        q, k, v = map(self.split_heads, torch.split(c, x.shape[-1], dim=2))
+        q, k, v = map(
+            self.split_heads, torch.split(c, x.shape[-1], dim=2)
+        )
+
         present = torch.stack([k, v], dim=1)
+
         if past is not None:
             pk, pv = past[:, 0], past[:, 1]
             k = torch.cat([pk, k], dim=-2)
             v = torch.cat([pv, v], dim=-2)
+
         a = self.multihead_attn(q, k, v)
         a = self.merge_heads(a)
         a = self.c_proj(a)
+
         return a, present
 
     def split_heads(self, x):
         """ From [batch, sequence, features] to
         [batch, heads, sequence, features].
         """
-        return self.split_states(x, self.hparams.n_head).permute(0, 2, 1, 3)
+        return self.split_states(x, self.hparams.n_head).permute(
+            0, 2, 1, 3
+        )
 
     @staticmethod
     def split_states(x, n):
@@ -202,9 +225,14 @@ class Conv1D(nn.Linear):
 
 
 def gelu(x, c=math.sqrt(2 / math.pi)):
-    return 0.5 * x * (1 + torch.tanh(c * (x + 0.044715 * torch.pow(x, 3))))
+    return (
+        0.5 * x * (1 + torch.tanh(c * (x + 0.044715 * torch.pow(x, 3))))
+    )
 
 
 def position_for(batch_size, n_steps, past_length, device=None):
-    return (torch.arange(past_length, n_steps + past_length, device=device)
-            .unsqueeze(0).repeat(batch_size, 1))
+    return (
+        torch.arange(past_length, n_steps + past_length, device=device)
+        .unsqueeze(0)
+        .repeat(batch_size, 1)
+    )

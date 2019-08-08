@@ -25,8 +25,10 @@ def only_allow_defined_args(function_to_decorate):
         valid_names = get_defined_args(function_to_decorate)
         for arg_name in kwargs:
             if arg_name not in valid_names:
-                raise ValueError("Unknown argument seen '%s', expected: [%s]" %
-                                 (arg_name, ", ".join(valid_names)))
+                raise ValueError(
+                    "Unknown argument seen '%s', expected: [%s]"
+                    % (arg_name, ", ".join(valid_names))
+                )
         return function_to_decorate(*args, **kwargs)
 
     return _return_wrapped
@@ -35,6 +37,6 @@ def only_allow_defined_args(function_to_decorate):
 def get_defined_args(function):
     argspec = inspect.getfullargspec(function)
     valid_names = set(argspec.args + argspec.kwonlyargs)
-    if 'self' in valid_names:
-        valid_names.remove('self')
+    if "self" in valid_names:
+        valid_names.remove("self")
     return valid_names
