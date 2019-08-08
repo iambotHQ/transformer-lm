@@ -7,3 +7,5 @@ __pycache__
 /tests/shakespeare/sp-model.model
 /tests/shakespeare/sp-model.vocab
 /tests/shakespeare/sp-text.txt
+/build 
+/dist
