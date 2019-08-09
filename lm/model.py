@@ -55,7 +55,7 @@ class Model(nn.Module):
         # Transformer
         # presents = []
         for i, block in enumerate(self.blocks):
-            if self.hparams.gradient_checkpointing:
+            if getattr(self.hparams, 'gradient_checkpointing', False):
                 h, present = torch.utils.checkpoint.checkpoint(block, h, past[:, i] if past is not None else None)
             else:
                 h, present = block(h, past=past[:, i] if past is not None else None)
