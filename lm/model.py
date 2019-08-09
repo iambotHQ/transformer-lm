@@ -11,7 +11,6 @@ from torch import nn
 from torch.nn import functional as F
 
 
-
 @attr.s(auto_attribs=True, frozen=True)
 class HParams:
     n_vocab: int
@@ -54,7 +53,7 @@ class Model(nn.Module):
         # Transformer
         # presents = []
         for i, block in enumerate(self.blocks):
-            if getattr(self.hparams, 'gradient_checkpointing', False):
+            if self.hparams.gradient_checkpointing:
                 h, present = torch.utils.checkpoint.checkpoint(
                     block, h, past[:, i] if past is not None else None)
             else:
