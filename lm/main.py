@@ -28,31 +28,31 @@ from gpt2.lm.model import HParams, Model
 
 
 def main(
-        run_path,
-        dataset_path,
-        sp_model_path,
-        epochs=10,
-        lr=2.5e-4,
-        batch_size=2,  # per GPU
-        g_accum_gradients=None,  # accumulate gradients N times (globally)
-        gradient_checkpointing=False, # saves GPU memory
-        n_ctx=1024,
-        n_embed=768,
-        n_head=12,
-        n_layer=12,
-        n_hidden=None,  # equal to n_embed by default (better leave at None)
-        clean=False,  # clean run folder
-        log_every=1,
-        save_every=1000,
-        validate_every=None,  # same as save_every by default
-        only_validate=False,
-        max_tokens=None,
-        master_port='40390',
-        master_addr='127.0.0.1',
-        # These are set automatically when multiple GPUs are available
-        device_id=None,
-        n_devices=None,
-        ):
+    run_path,
+    dataset_path,
+    sp_model_path,
+    epochs=10,
+    lr=2.5e-4,
+    batch_size=2,  # per GPU
+    g_accum_gradients=None,  # accumulate gradients N times (globally)
+    gradient_checkpointing=False,  # saves GPU memory
+    n_ctx=1024,
+    n_embed=768,
+    n_head=12,
+    n_layer=12,
+    n_hidden=None,  # equal to n_embed by default (better leave at None)
+    clean=False,  # clean run folder
+    log_every=1,
+    save_every=1000,
+    validate_every=None,  # same as save_every by default
+    only_validate=False,
+    max_tokens=None,
+    master_port="40390",
+    master_addr="127.0.0.1",
+    # These are set automatically when multiple GPUs are available
+    device_id=None,
+    n_devices=None,
+):
     if n_devices is None:
         n_devices = torch.cuda.device_count()
         if n_devices > 1:
@@ -76,20 +76,14 @@ def main(
     if is_main:
         run_path_mark = run_path / ".lm"
         if clean and run_path.exists():
-            assert (
-                run_path_mark.exists()
-            )  # to avoid removing unrelated folder
+            assert run_path_mark.exists()  # to avoid removing unrelated folder
             shutil.rmtree(run_path)
         run_path.mkdir(exist_ok=True, parents=True)
         run_path_mark.touch()
         shutil.copy(sp_model_path, run_path / "sp.model")
 
-        log_writer_train = SummaryWriter(
-            logdir / "train", max_queue=5, flush_secs=3
-        )
-        log_writer_valid = SummaryWriter(
-            logdir / "valid", max_queue=5, flush_secs=3
-        )
+        log_writer_train = SummaryWriter(logdir / "train", max_queue=5, flush_secs=3)
+        log_writer_valid = SummaryWriter(logdir / "valid", max_queue=5, flush_secs=3)
     sp_model = spm.SentencePieceProcessor()
     sp_model.load(sp_model_path)
 
@@ -111,9 +105,7 @@ def main(
         g_accum_gradients=g_accum_gradients,
     )
 
-    params_s = json.dumps(
-        params, indent=4, sort_keys=True, ensure_ascii=False
-    )
+    params_s = json.dumps(params, indent=4, sort_keys=True, ensure_ascii=False)
     if is_main:
         print(params_s)
         (run_path / "params.json").write_text(params_s, encoding="utf8")
@@ -178,9 +170,7 @@ def main(
         """ Train step on one GPU.
         """
         optimizer.zero_grad()
-        loss_scale = (
-            n_ctx * batch_size * accum_gradients / (512 * 4 * 32)
-        )
+        loss_scale = n_ctx * batch_size * accum_gradients / (512 * 4 * 32)
         for ctx in torch.split(context, batch_size):
             ctx = ctx.to(device=device)
             logits = model(ctx)["logits"]
@@ -193,10 +183,7 @@ def main(
         nonlocal seen_tokens
         epoch_size = len(train_dataset) // step_tokens * step_tokens
         pbar = tqdm.trange(
-            epochs,
-            desc="epochs",
-            dynamic_ncols=True,
-            disable=not is_main,
+            epochs, desc="epochs", dynamic_ncols=True, disable=not is_main
         )
         init_epoch_pbar = lambda: tqdm.trange(
             epoch_size, dynamic_ncols=True, disable=not is_main
@@ -208,24 +195,15 @@ def main(
         step = 0
         epoch, train_loss = 0, 0.0
         context_gen = _gen_training_batch(
-            train_dataset,
-            n_ctx=n_ctx,
-            batch_size=batch_size * accum_gradients,
+            train_dataset, n_ctx=n_ctx, batch_size=batch_size * accum_gradients
         )
         while seen_tokens < epochs * epoch_size:
             if max_tokens and seen_tokens >= max_tokens:
-                print(
-                    f"max_tokens {max_tokens} reached, "
-                    f"saving and exiting"
-                )
+                print(f"max_tokens {max_tokens} reached, " f"saving and exiting")
                 if is_main:
+                    log_writer_train.add_scalar("loss_iter", float(train_loss), step)
                     log_writer_train.add_scalar(
-                        "loss_iter", float(train_loss), step
-                    )
-                    log_writer_train.add_scalar(
-                        "perplexity_iter",
-                        float(np.exp(train_loss)),
-                        step,
+                        "perplexity_iter", float(np.exp(train_loss)), step
                     )
                 save()
                 validate(epoch)
@@ -242,13 +220,9 @@ def main(
                 save()
             if is_main and step % log_every == 0:
                 train_loss = loss_meter.mean()
-                json_log_plots.write_event(
-                    run_path, step=seen_tokens, loss=train_loss
-                )
+                json_log_plots.write_event(run_path, step=seen_tokens, loss=train_loss)
                 loss_meter.reset()
-                log_writer_train.add_scalar(
-                    "loss_iter", float(train_loss), step
-                )
+                log_writer_train.add_scalar("loss_iter", float(train_loss), step)
                 log_writer_train.add_scalar(
                     "perplexity_iter", float(np.exp(train_loss)), step
                 )
@@ -262,13 +236,9 @@ def main(
                 epoch_pbar = init_epoch_pbar()
 
                 if is_main:
+                    log_writer_train.add_scalar("loss_epoch", float(train_loss), epoch)
                     log_writer_train.add_scalar(
-                        "loss_epoch", float(train_loss), epoch
-                    )
-                    log_writer_train.add_scalar(
-                        "perplexity_epoch",
-                        float(np.exp(train_loss)),
-                        epoch,
+                        "perplexity_epoch", float(np.exp(train_loss)), epoch
                     )
 
                 epoch += 1
@@ -281,13 +251,9 @@ def main(
         if not is_main or world_size != 1:
             return
         valid_loss = get_valid_loss()
-        json_log_plots.write_event(
-            run_path, step=seen_tokens, valid_loss=valid_loss
-        )
+        json_log_plots.write_event(run_path, step=seen_tokens, valid_loss=valid_loss)
         log_writer_valid.add_scalar("loss_epoch", valid_loss, epoch)
-        log_writer_valid.add_scalar(
-            "perplexity_epoch", np.exp(valid_loss), epoch
-        )
+        log_writer_valid.add_scalar("perplexity_epoch", np.exp(valid_loss), epoch)
 
     def get_valid_loss():
         """ Run validation, return mean loss. This is a pessimistic score,
@@ -297,7 +263,8 @@ def main(
         losses = AverageMeter()
         with torch.no_grad():
             for ctx in _valid_batch_iter(
-                    valid_dataset, batch_size=batch_size, n_ctx=n_ctx):
+                valid_dataset, batch_size=batch_size, n_ctx=n_ctx
+            ):
                 if not ctx:
                     continue
                 ctx = torch.LongTensor(ctx).to(device)
@@ -312,9 +279,7 @@ def main(
             return
         for path in [model_path, optimizer_path]:
             if path.exists():
-                shutil.copy(
-                    path, run_path / f"{path.stem}-prev{path.suffix}"
-                )
+                shutil.copy(path, run_path / f"{path.stem}-prev{path.suffix}")
         torch.save(
             {
                 "state_dict": _unwrapped_model(model).state_dict(),
@@ -350,9 +315,7 @@ def batch_ids_generator(
         yield [next(gen) for _ in range(batch_size)]
 
 
-def _gen_training_batch(
-    dataset: np.ndarray, n_ctx: int, batch_size: int
-):
+def _gen_training_batch(dataset: np.ndarray, n_ctx: int, batch_size: int):
     for batch_ids in batch_ids_generator(dataset, batch_size):
         yield [dataset[idx : idx + n_ctx] for idx in batch_ids]
 
@@ -360,16 +323,12 @@ def _gen_training_batch(
     # return [dataset[idx:idx + n_ctx] for idx in indices]
 
 
-def _valid_batch_iter(
-    dataset: np.ndarray, *, batch_size: int, n_ctx: int
-):
+def _valid_batch_iter(dataset: np.ndarray, *, batch_size: int, n_ctx: int):
     start_indices = range(0, len(dataset) - n_ctx, n_ctx)
     return _batch_it(
         (
             dataset[start_idx : start_idx + n_ctx]
-            for start_idx in tqdm.tqdm(
-                start_indices, desc="validation", leave=False
-            )
+            for start_idx in tqdm.tqdm(start_indices, desc="validation", leave=False)
         ),
         batch_size=batch_size,
     )

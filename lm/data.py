@@ -16,29 +16,19 @@ def sp_train():
         description="build sentencepiece model on train subset of the corpora"
     )
     arg = parser.add_argument
-    arg(
-        "corpora",
-        nargs="+",
-        help="corpus roots, containing train/valid/test splits",
-    )
+    arg("corpora", nargs="+", help="corpus roots, containing train/valid/test splits")
     arg(
         "sp_text",
-        help="text file for sentencepiece model "
-        "(will be used as-is if exists)",
+        help="text file for sentencepiece model " "(will be used as-is if exists)",
     )
-    arg(
-        "sp_model_prefix",
-        help="path (prefix) to output sentencepiece model",
-    )
+    arg("sp_model_prefix", help="path (prefix) to output sentencepiece model")
     arg("--vocab-size", type=int, default=50000)
     arg("--character-coverage", type=float, default=1.0)
     args = parser.parse_args()
 
     sp_text = Path(args.sp_text)
     if sp_text.exists():
-        print(
-            f'Using existing "{sp_text}", remove and re-run if it is stale.'
-        )
+        print(f'Using existing "{sp_text}", remove and re-run if it is stale.')
     else:
         paths = []
         print(f"Reading corpora: {args.corpora}")
@@ -53,9 +43,7 @@ def sp_train():
             paths.extend(corpus_paths)
         try:
             with sp_text.open("wt", encoding="utf8") as sp_text_file:
-                for path in tqdm.tqdm(
-                    paths, desc="building sentencepiece input"
-                ):
+                for path in tqdm.tqdm(paths, desc="building sentencepiece input"):
                     with path.open("rt", encoding="utf8") as f:
                         for line in f:
                             if line.strip():
@@ -89,11 +77,7 @@ def sp_encode():
         description="encode corpus with a sentencepiece model"
     )
     arg = parser.add_argument
-    arg(
-        "corpora",
-        nargs="+",
-        help="corpus roots, containing train/valid/test splits",
-    )
+    arg("corpora", nargs="+", help="corpus roots, containing train/valid/test splits")
     arg("sp_model", help="path to output model")
     arg(
         "output",

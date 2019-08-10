@@ -3,11 +3,9 @@ from pathlib import Path
 from typing import *
 
 import fire
+import numpy as np
 import sentencepiece as spm
 import torch
-import numpy as np
-import fire
-from .fire_utils import only_allow_defined_args
 
 from .common import END_OF_LINE, END_OF_TEXT
 from .fire_utils import only_allow_defined_args
@@ -38,9 +36,7 @@ class ModelWrapper:
     ):
         sp_model = spm.SentencePieceProcessor()
         sp_model.load(str(root / "sp.model"))
-        hparams = json.loads((root / "params.json").read_text())[
-            "hparams"
-        ]
+        hparams = json.loads((root / "params.json").read_text())["hparams"]
         hparams.setdefault("n_hidden", hparams["n_embed"])
         model = Model(HParams(**hparams), text_gen_mode).to(device)
         state = torch.load(root / "model.pt", map_location=device)
@@ -71,9 +67,7 @@ class ModelWrapper:
             logits = self.model(ctx)["logits"].squeeze(0)
             return torch.log_softmax(logits, dim=1)
 
-    def get_occurred_log_probs(
-        self, tokens: List[str]
-    ) -> List[Tuple[float, str]]:
+    def get_occurred_log_probs(self, tokens: List[str]) -> List[Tuple[float, str]]:
         """ Return a list of log probs of actually occurred tokens,
         starting from the second.
         """
@@ -83,9 +77,7 @@ class ModelWrapper:
             for idx, token in enumerate(tokens[1:])
         ]
 
-    def get_next_top_k(
-        self, tokens: List[str], top_k: int
-    ) -> List[Tuple[float, str]]:
+    def get_next_top_k(self, tokens: List[str], top_k: int) -> List[Tuple[float, str]]:
         """ Return a list of top k tuples of log prob and token,
         for what would come after the last token.
         """
@@ -132,15 +124,11 @@ class ModelWrapper:
 
             tokens.append(next_token)
 
-            normalized_token: str = next_token.replace(
-                END_OF_LINE, "\n"
-            ).replace(END_OF_TEXT, "\n").replace("▁", " ")
-            if (
-                len(normalized_token) > 1
-                and normalized_token[1] in ending_puncts
-            ) or (
-                len(tokens) > 1
-                and tokens[-2].replace("▁", "") in starting_puncts
+            normalized_token: str = next_token.replace(END_OF_LINE, "\n").replace(
+                END_OF_TEXT, "\n"
+            ).replace("▁", " ")
+            if (len(normalized_token) > 1 and normalized_token[1] in ending_puncts) or (
+                len(tokens) > 1 and tokens[-2].replace("▁", "") in starting_puncts
             ):
                 normalized_token = normalized_token.replace(" ", "")
             tok_print(normalized_token)
@@ -148,7 +136,9 @@ class ModelWrapper:
 
         return tokens
 
-    def generate_tokens(self, tokens_prefix: List[str], tokens_to_generate: int, top_k: int) -> List[str]:
+    def generate_tokens(
+        self, tokens_prefix: List[str], tokens_to_generate: int, top_k: int
+    ) -> List[str]:
 
         tokens = list(tokens_prefix)
 
@@ -165,7 +155,7 @@ class ModelWrapper:
             next_token_n = np.random.choice(top_k, p=probs)
             next_token = ntk[next_token_n][1]
             # print (next_token)
-            
+
             tokens.append(next_token)
 
         return tokens
@@ -174,10 +164,9 @@ class ModelWrapper:
 def fixed_state_dict(state_dict):
     if all(k.startswith("module.") for k in state_dict):
         # legacy multi-GPU format
-        state_dict = {
-            k[len("module.") :]: v for k, v in state_dict.items()
-        }
+        state_dict = {k[len("module.") :]: v for k, v in state_dict.items()}
     return state_dict
+
 
 def gen_main(model_path, prefix, tokens_to_generate=42, top_k=8):
 
@@ -189,6 +178,7 @@ def gen_main(model_path, prefix, tokens_to_generate=42, top_k=8):
 
     tokens_gen = mw.generate_tokens(tokens, tokens_to_generate, top_k)
     print(mw.sp_model.DecodePieces(tokens_gen))
+
 
 def fire_gen_main():
     fire.Fire(only_allow_defined_args(gen_main))

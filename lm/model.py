@@ -10,6 +10,18 @@ import torch.utils.checkpoint
 from torch import nn
 from torch.nn import functional as F
 
+output_getter_type = Callable[[torch.Tensor], torch.Tensor]
+
+
+class OutputGetters:
+    first: output_getter_type = lambda output: output[:, 0]
+    last: output_getter_type = lambda output: output[:, -1]
+    mean: output_getter_type = lambda output: output.mean(dim=1)
+
+    @classmethod
+    def by_name(cls, name: str):
+        return getattr(cls, name)
+
 
 @attr.s(auto_attribs=True, frozen=True)
 class HParams:
@@ -23,16 +35,21 @@ class HParams:
 
 
 class Model(nn.Module):
-    def __init__(self, hparams: HParams, text_gen_mode: bool = False):
+    def __init__(
+        self,
+        hparams: HParams,
+        text_gen_mode: bool = False,
+        hidden_getter: output_getter_type = OutputGetters.mean,
+    ):
         super().__init__()
         self._text_gen_mode = text_gen_mode
+        self._hidden_getter = hidden_getter
         self.hparams = hparams
         self.wpe = nn.Embedding(hparams.n_ctx, hparams.n_embed)
         nn.init.normal_(self.wpe.weight, std=0.01)
         self.wte = nn.Embedding(hparams.n_vocab, hparams.n_embed)
         nn.init.normal_(self.wte.weight, std=0.02)
-        self.blocks = nn.ModuleList(
-            [Block(hparams) for _ in range(hparams.n_layer)])
+        self.blocks = nn.ModuleList([Block(hparams) for _ in range(hparams.n_layer)])
         self.ln_f = Norm(self.hparams.n_hidden)
         if hparams.n_hidden != hparams.n_embed:
             self.in_proj = Conv1D(hparams.n_embed, hparams.n_hidden)
@@ -55,17 +72,17 @@ class Model(nn.Module):
         for i, block in enumerate(self.blocks):
             if self.hparams.gradient_checkpointing:
                 h, present = torch.utils.checkpoint.checkpoint(
-                    block, h, past[:, i] if past is not None else None)
+                    block, h, past[:, i] if past is not None else None
+                )
             else:
-                h, present = block(
-                    h, past=past[:, i] if past is not None else None)
+                h, present = block(h, past=past[:, i] if past is not None else None)
             # presents.append(present)
         h = self.ln_f(h)
 
         if self.out_proj:
             h = self.out_proj(h)
 
-        output = {"hidden": h}
+        output = {"hidden": self._hidden_getter(h)}
 
         if self._text_gen_mode:
             h_flat = h.reshape([batch_size * n_ctx, self.hparams.n_embed])
@@ -95,6 +112,7 @@ class Block(nn.Module):
 class Norm(nn.Module):
     """ Normalize to mean = 0, std = 1, then do a diagonal affine transform.
     """
+
     def __init__(self, n_features, *, dim=-1, epsilon=1e-5):
         super().__init__()
         self.n_features = n_features
@@ -216,9 +234,12 @@ class Conv1D(nn.Linear):
 
 
 def gelu(x, c=math.sqrt(2 / math.pi)):
-    return (0.5 * x * (1 + torch.tanh(c * (x + 0.044715 * torch.pow(x, 3)))))
+    return 0.5 * x * (1 + torch.tanh(c * (x + 0.044715 * torch.pow(x, 3))))
 
 
 def position_for(batch_size, n_steps, past_length, device=None):
-    return (torch.arange(past_length, n_steps + past_length,
-                         device=device).unsqueeze(0).repeat(batch_size, 1))
+    return (
+        torch.arange(past_length, n_steps + past_length, device=device)
+        .unsqueeze(0)
+        .repeat(batch_size, 1)
+    )
