@@ -21,6 +21,5 @@ setup(
             "gpt-2-gen = lm.inference:fire_gen_main",
             "lm-web-ui = lm_web_ui.main:main",
         ]
-    },
-    package_data={"lm": ["default_hparams.json"]},
+    }
 )

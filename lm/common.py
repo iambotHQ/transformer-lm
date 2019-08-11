@@ -8,8 +8,13 @@ END_OF_LINE = "<endofline>"
 END_OF_TEXT = "<endoftext>"
 
 
-default_hparams = json.loads(
-    (Path(__file__).parent / "default_hparams.json").read_text()
+default_hparams = HParams(
+    **{
+        "n_ctx": 1024,
+        "n_embed": 768,
+        "n_head": 12,
+        "n_hidden": 768,
+        "n_layer": 12,
+        "n_vocab": 50000,
+    }
 )
-default_hparams.setdefault("n_hidden", default_hparams["n_embed"])
-default_hparams = HParams(**default_hparams)
