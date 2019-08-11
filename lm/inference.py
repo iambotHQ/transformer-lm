@@ -7,9 +7,9 @@ import numpy as np
 import sentencepiece as spm
 import torch
 
-from .common import END_OF_LINE, END_OF_TEXT
+from .common import END_OF_LINE, END_OF_TEXT, default_hparams
 from .fire_utils import only_allow_defined_args
-from .model import HParams, Model
+from .model import HParams, Model, OutputGetters
 
 
 class ModelWrapper:
@@ -33,16 +33,37 @@ class ModelWrapper:
         device: Union[str, torch.device],
         text_gen_mode: bool = False,
         sp_model: Optional[spm.SentencePieceProcessor] = None,
+        encoder_mode: bool = False,
     ):
         sp_model = spm.SentencePieceProcessor()
         sp_model.load(str(root / "sp.model"))
         hparams = json.loads((root / "params.json").read_text())["hparams"]
         hparams.setdefault("n_hidden", hparams["n_embed"])
-        model = Model(HParams(**hparams), text_gen_mode).to(device)
+        model = Model(HParams(**hparams), text_gen_mode, encoder_mode).to(device)
         state = torch.load(root / "model.pt", map_location=device)
         state_dict = fixed_state_dict(state["state_dict"])
         model.load_state_dict(state_dict)
         return cls(model, sp_model, device)
+
+    @classmethod
+    def load_encoder(
+        cls,
+        model_path: Path,
+        text_gen_mode: bool,
+        encoder_mode: bool,
+        device: torch.device,
+        output_getter = OutputGetters.mean,
+        params = default_hparams,
+    ):  
+        if isinstance(output_getter, str):
+            output_getter = getattr(OutputGetters, output_getter)
+        model = Model(params, text_gen_mode, encoder_mode, output_getter)
+        state_dict = fixed_state_dict(
+            torch.load(model_path, map_location=device)["state_dict"]
+        )
+        model.load_state_dict(state_dict)
+        model.eval()
+        return model
 
     def tokenize(self, s: str) -> List[str]:
         return self.sp_model.EncodeAsPieces(s)

@@ -13,13 +13,14 @@ setup(
         "tensorboardX",
     ],
     entry_points={
-        'console_scripts': [
-            'sp-train = lm.data:sp_train',
-            'sp-encode = lm.data:sp_encode',
-            'gpt-2-tf-train = lm.gpt_2_tf.train:main',
-            'gpt-2 = lm.main:fire_main',
-            'gpt-2-gen = lm.inference:fire_gen_main',
-            'lm-web-ui = lm_web_ui.main:main',
-        ],
-    }
+        "console_scripts": [
+            "sp-train = lm.data:sp_train",
+            "sp-encode = lm.data:sp_encode",
+            "gpt-2-tf-train = lm.gpt_2_tf.train:main",
+            "gpt-2 = lm.main:fire_main",
+            "gpt-2-gen = lm.inference:fire_gen_main",
+            "lm-web-ui = lm_web_ui.main:main",
+        ]
+    },
+    package_data={"lm": ["default_hparams.json"]},
 )

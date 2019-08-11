@@ -39,7 +39,7 @@ class Model(nn.Module):
         self,
         hparams: HParams,
         text_gen_mode: bool = False,
-        encoder_mode:bool=False,
+        encoder_mode: bool = False,
         hidden_getter: output_getter_type = OutputGetters.mean,
     ):
         super().__init__()
@@ -87,8 +87,8 @@ class Model(nn.Module):
         output = {"hidden": self._hidden_getter(h)}
 
         if self._encoder_mode:
-            return output['hidden']
-            
+            return output["hidden"]
+
         if self._text_gen_mode:
             h_flat = h.reshape([batch_size * n_ctx, self.hparams.n_embed])
             logits = torch.matmul(h_flat, self.wte.weight.t())
