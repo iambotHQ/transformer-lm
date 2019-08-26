@@ -23,7 +23,7 @@ def merge_files(save_to: Path, files: Iterable[Path]):
                     fout.write(line)
 
 
-def main(save_to: Path, data_root: Path):
+def run_merge_files(save_to: Path, data_root: Path):
     save_to = Path(save_to)
     data_root = Path(data_root)
 
@@ -31,5 +31,9 @@ def main(save_to: Path, data_root: Path):
     merge_files(save_to, files)
 
 
+def fire_merge_files():
+    Fire(run_merge_files)
+
+
 if __name__ == "__main__":
-    Fire(main)
+    fire_merge_files()

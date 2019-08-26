@@ -9,7 +9,7 @@ from fire import Fire
 from stages import get_logger
 from tqdm import tqdm
 
-from gpt2.lm.common import END_OF_LINE, END_OF_TEXT
+from .common import END_OF_LINE, END_OF_TEXT
 
 logger = get_logger("Splitter")
 
@@ -147,5 +147,9 @@ def split_data(data_root: Path, out_dir_root: Path, train_val_ratio: float = 0.9
         sh.copy(str(valid_data_path / filename(idx)), test_data_path)
 
 
-if __name__ == "__main__":
+def fire_split_data():
     Fire(split_data2)
+
+
+if __name__ == "__main__":
+    fire_split_data()

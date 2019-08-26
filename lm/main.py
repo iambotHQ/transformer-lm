@@ -315,13 +315,14 @@ def batch_ids_generator(
         yield [next(gen) for _ in range(batch_size)]
 
 
-def _gen_training_batch(dataset: np.ndarray, n_ctx: int, batch_size: int):
-    for batch_ids in batch_ids_generator(dataset, batch_size):
-        yield [dataset[idx : idx + n_ctx] for idx in batch_ids]
 
-    # indices = [np.random.randint(0, len(dataset) - n_ctx) for _ in range(batch_size)]
-    # return [dataset[idx:idx + n_ctx] for idx in indices]
-
+def _gen_training_batch(
+    dataset: np.ndarray, n_ctx: int, batch_size: int
+):
+    # for batch_ids in batch_ids_generator(dataset, batch_size):
+    #     yield torch.LongTensor([dataset[idx:idx + n_ctx] for idx in batch_ids])
+    indices = [np.random.randint(0, len(dataset) - n_ctx) for _ in range(batch_size)]
+    return [dataset[idx:idx + n_ctx] for idx in indices]
 
 def _valid_batch_iter(dataset: np.ndarray, *, batch_size: int, n_ctx: int):
     start_indices = range(0, len(dataset) - n_ctx, n_ctx)
