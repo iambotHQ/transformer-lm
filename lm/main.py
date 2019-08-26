@@ -127,7 +127,7 @@ def main(
     else:
         device = torch.device("cpu")
 
-    model = Model(hparams).to(device)
+    model = Model(hparams, True).to(device)
     cross_entropy = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     loss_meter = AverageMeter()
@@ -185,7 +185,7 @@ def main(
             loss = loss_fn(logits, ctx)
             (loss * loss_scale).backward()
             loss_meter.update(float(loss.item()))
-            
+
         optimizer.step()
 
     def train():
