@@ -49,6 +49,7 @@ def main(
     max_tokens=None,
     master_port="40390",
     master_addr="127.0.0.1",
+    sublog=None,
     # These are set automatically when multiple GPUs are available
     device_id=None,
     n_devices=None,
@@ -74,6 +75,9 @@ def main(
     model_path = run_path / "model.pt"
     optimizer_path = run_path / "optim.pt"
     if is_main:
+        logdir = run_path / "logs"
+        if sublog:
+            logdir = logdir / sublog
         run_path_mark = run_path / ".lm"
         if clean and run_path.exists():
             assert run_path_mark.exists()  # to avoid removing unrelated folder
@@ -197,9 +201,11 @@ def main(
         context_gen = _gen_training_batch(
             train_dataset, n_ctx=n_ctx, batch_size=batch_size * accum_gradients
         )
+        context = None
         while seen_tokens < epochs * epoch_size:
             if max_tokens and seen_tokens >= max_tokens:
-                print(f"max_tokens {max_tokens} reached, " f"saving and exiting")
+                print(f"max_tokens {max_tokens} reached, "f"saving and exiting")
+                
                 if is_main:
                     log_writer_train.add_scalar("loss_iter", float(train_loss), step)
                     log_writer_train.add_scalar(
@@ -208,16 +214,21 @@ def main(
                 save()
                 validate(epoch)
                 return
-            context = torch.LongTensor(next(context_gen))
+
+            # context = torch.LongTensor(next(context_gen)) # TODO GSBATCH
             train_step(context)
+
             seen_tokens += step_tokens
             step += 1
+
             epoch_pbar.update(step_tokens)
             epoch_pbar.set_description(f"epoch {1 + epoch}")
             epoch_pbar.set_postfix(loss=f"{loss_meter.mean():.2f}")
             epoch_pbar.refresh()
+
             if step % save_every == 0:
                 save()
+
             if is_main and step % log_every == 0:
                 train_loss = loss_meter.mean()
                 json_log_plots.write_event(run_path, step=seen_tokens, loss=train_loss)
@@ -315,14 +326,12 @@ def batch_ids_generator(
         yield [next(gen) for _ in range(batch_size)]
 
 
-
-def _gen_training_batch(
-    dataset: np.ndarray, n_ctx: int, batch_size: int
-):
+def _gen_training_batch(dataset: np.ndarray, n_ctx: int, batch_size: int):
     # for batch_ids in batch_ids_generator(dataset, batch_size):
     #     yield torch.LongTensor([dataset[idx:idx + n_ctx] for idx in batch_ids])
     indices = [np.random.randint(0, len(dataset) - n_ctx) for _ in range(batch_size)]
-    return [dataset[idx:idx + n_ctx] for idx in indices]
+    return [dataset[idx : idx + n_ctx] for idx in indices]
+
 
 def _valid_batch_iter(dataset: np.ndarray, *, batch_size: int, n_ctx: int):
     start_indices = range(0, len(dataset) - n_ctx, n_ctx)
