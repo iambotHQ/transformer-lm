@@ -22,9 +22,9 @@ import tqdm
 from tensorboardX import SummaryWriter
 from torch import nn, optim
 
-from gpt2.lm.fire_utils import get_defined_args, only_allow_defined_args
-from gpt2.lm.inference import fixed_state_dict
-from gpt2.lm.model import HParams, Model
+from lm.fire_utils import get_defined_args, only_allow_defined_args
+from lm.inference import fixed_state_dict
+from lm.model import HParams, Model
 
 
 def main(
