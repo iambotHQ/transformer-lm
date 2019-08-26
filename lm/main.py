@@ -173,6 +173,10 @@ def main(
     def train_step(context: torch.LongTensor):
         """ Train step on one GPU.
         """
+        if context is None:
+            context = _gen_training_batch(train_dataset, n_ctx=n_ctx, batch_size=batch_size * accum_gradients)
+            context = torch.LongTensor(context)
+
         optimizer.zero_grad()
         loss_scale = n_ctx * batch_size * accum_gradients / (512 * 4 * 32)
         for ctx in torch.split(context, batch_size):
@@ -181,6 +185,7 @@ def main(
             loss = loss_fn(logits, ctx)
             (loss * loss_scale).backward()
             loss_meter.update(float(loss.item()))
+            
         optimizer.step()
 
     def train():
@@ -205,7 +210,7 @@ def main(
         while seen_tokens < epochs * epoch_size:
             if max_tokens and seen_tokens >= max_tokens:
                 print(f"max_tokens {max_tokens} reached, "f"saving and exiting")
-                
+
                 if is_main:
                     log_writer_train.add_scalar("loss_iter", float(train_loss), step)
                     log_writer_train.add_scalar(
