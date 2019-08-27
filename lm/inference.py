@@ -54,7 +54,7 @@ class ModelWrapper:
         device: torch.device,
         output_getter = OutputGetters.mean,
         params = default_hparams,
-    ):  
+    ):
         if isinstance(output_getter, str):
             output_getter = getattr(OutputGetters, output_getter)
         model = Model(params, text_gen_mode, encoder_mode, output_getter)
@@ -157,7 +157,7 @@ class ModelWrapper:
 
         return tokens
 
-    def generate_tokens(
+    def generate_tokens_old(
         self, tokens_prefix: List[str], tokens_to_generate: int, top_k: int
     ) -> List[str]:
 
