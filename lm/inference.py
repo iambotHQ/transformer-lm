@@ -16,12 +16,7 @@ class ModelWrapper:
     END_OF_LINE = END_OF_LINE
     END_OF_TEXT = END_OF_TEXT
 
-    def __init__(
-        self,
-        model: Model,
-        sp_model: spm.SentencePieceProcessor,
-        device: Union[str, torch.device],
-    ):
+    def __init__(self, model: Model, sp_model: spm.SentencePieceProcessor, device: Union[str, torch.device]):
         self.model = model
         self.sp_model = sp_model
         self.device = device
@@ -47,20 +42,12 @@ class ModelWrapper:
 
     @classmethod
     def load_encoder(
-        cls,
-        model_path: Path,
-        text_gen_mode: bool,
-        encoder_mode: bool,
-        device: torch.device,
-        output_getter = OutputGetters.mean,
-        params = default_hparams,
+        cls, model_path: Path, text_gen_mode: bool, encoder_mode: bool, device: torch.device, output_getter=OutputGetters.mean, params=default_hparams
     ):
         if isinstance(output_getter, str):
             output_getter = getattr(OutputGetters, output_getter)
         model = Model(params, text_gen_mode, encoder_mode, output_getter)
-        state_dict = fixed_state_dict(
-            torch.load(model_path, map_location=device)["state_dict"]
-        )
+        state_dict = fixed_state_dict(torch.load(model_path, map_location=device)["state_dict"])
         model.load_state_dict(state_dict)
         model.eval()
         return model
@@ -93,32 +80,16 @@ class ModelWrapper:
         starting from the second.
         """
         log_probs = self.get_log_probs(tokens)
-        return [
-            (float(log_probs[idx, self.token_to_id(token)]), token)
-            for idx, token in enumerate(tokens[1:])
-        ]
+        return [(float(log_probs[idx, self.token_to_id(token)]), token) for idx, token in enumerate(tokens[1:])]
 
     def get_next_top_k(self, tokens: List[str], top_k: int) -> List[Tuple[float, str]]:
         """ Return a list of top k tuples of log prob and token,
         for what would come after the last token.
         """
         next_log_probs = self.get_log_probs(tokens)[-1]
-        return sorted(
-            (
-                (float(next_log_probs[i]), self.id_to_token(i))
-                for i in next_log_probs.argsort()[-top_k:]
-            ),
-            reverse=True,
-        )
+        return sorted(((float(next_log_probs[i]), self.id_to_token(i)) for i in next_log_probs.argsort()[-top_k:]), reverse=True)
 
-    def generate_tokens(
-        self,
-        tokens_prefix: List[str],
-        tokens_to_generate: int,
-        top_k: int,
-        no_eot: bool = False,
-        stop_on_eot: bool = False,
-    ) -> List[str]:
+    def generate_tokens(self, tokens_prefix: List[str], tokens_to_generate: int, top_k: int, no_eot: bool = False, stop_on_eot: bool = False) -> List[str]:
         tokens = ["<endoftext>", *list(tokens_prefix)]
         tok_print = lambda tok: print(tok, end="", flush=True)
         tok_print(f"{self.sp_model.DecodePieces(tokens_prefix)} |")
@@ -145,21 +116,15 @@ class ModelWrapper:
 
             tokens.append(next_token)
 
-            normalized_token: str = next_token.replace(END_OF_LINE, "\n").replace(
-                END_OF_TEXT, "\n"
-            ).replace("▁", " ")
-            if (len(normalized_token) > 1 and normalized_token[1] in ending_puncts) or (
-                len(tokens) > 1 and tokens[-2].replace("▁", "") in starting_puncts
-            ):
+            normalized_token: str = next_token.replace(END_OF_LINE, "\n").replace(END_OF_TEXT, "\n").replace("▁", " ")
+            if (len(normalized_token) > 1 and normalized_token[1] in ending_puncts) or (len(tokens) > 1 and tokens[-2].replace("▁", "") in starting_puncts):
                 normalized_token = normalized_token.replace(" ", "")
             tok_print(normalized_token)
         print()
 
         return tokens
 
-    def generate_tokens_old(
-        self, tokens_prefix: List[str], tokens_to_generate: int, top_k: int
-    ) -> List[str]:
+    def generate_tokens_old(self, tokens_prefix: List[str], tokens_to_generate: int, top_k: int) -> List[str]:
 
         tokens = list(tokens_prefix)
 

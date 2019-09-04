@@ -35,24 +35,22 @@ class HParams:
 
 
 class Model(nn.Module):
-    def __init__(
-        self,
-        hparams: HParams,
-        text_gen_mode: bool = False,
-        encoder_mode: bool = False,
-        hidden_getter: output_getter_type = OutputGetters.mean,
-    ):
+    def __init__(self, hparams: HParams, text_gen_mode: bool = False, encoder_mode: bool = False, hidden_getter: output_getter_type = OutputGetters.mean):
         super().__init__()
         self._text_gen_mode = text_gen_mode
         self._hidden_getter = hidden_getter
         self._encoder_mode = encoder_mode
         self.hparams = hparams
+
         self.wpe = nn.Embedding(hparams.n_ctx, hparams.n_embed)
         nn.init.normal_(self.wpe.weight, std=0.01)
+
         self.wte = nn.Embedding(hparams.n_vocab, hparams.n_embed)
+
         nn.init.normal_(self.wte.weight, std=0.02)
         self.blocks = nn.ModuleList([Block(hparams) for _ in range(hparams.n_layer)])
         self.ln_f = Norm(self.hparams.n_hidden)
+
         if hparams.n_hidden != hparams.n_embed:
             self.in_proj = Conv1D(hparams.n_embed, hparams.n_hidden)
             self.out_proj = Conv1D(hparams.n_hidden, hparams.n_embed)
@@ -73,9 +71,7 @@ class Model(nn.Module):
         presents = []
         for i, block in enumerate(self.blocks):
             if self.hparams.gradient_checkpointing:
-                h, present = torch.utils.checkpoint.checkpoint(
-                    block, h, past[:, i] if past is not None else None
-                )
+                h, present = torch.utils.checkpoint.checkpoint(block, h, past[:, i] if past is not None else None)
             else:
                 h, present = block(h, past=past[:, i] if past is not None else None)
             # presents.append(present)
@@ -84,7 +80,7 @@ class Model(nn.Module):
         if self.out_proj:
             h = self.out_proj(h)
 
-        output = {"hidden": self._hidden_getter(h)}
+        output = {"hidden": self._hidden_getter(h), "all_hidden": h}
 
         if self._encoder_mode:
             return output["hidden"]
@@ -94,6 +90,7 @@ class Model(nn.Module):
             logits = torch.matmul(h_flat, self.wte.weight.t())
             logits = logits.reshape([batch_size, n_ctx, self.hparams.n_vocab])
             output["logits"] = logits
+
         return output
 
 
@@ -242,8 +239,4 @@ def gelu(x, c=math.sqrt(2 / math.pi)):
 
 
 def position_for(batch_size, n_steps, past_length, device=None):
-    return (
-        torch.arange(past_length, n_steps + past_length, device=device)
-        .unsqueeze(0)
-        .repeat(batch_size, 1)
-    )
+    return torch.arange(past_length, n_steps + past_length, device=device).unsqueeze(0).repeat(batch_size, 1)

@@ -100,14 +100,7 @@ def main(
         n_layer=n_layer,
         gradient_checkpointing=gradient_checkpointing,
     )
-    params = dict(
-        hparams=attr.asdict(hparams),
-        argv=" ".join(sys.argv),
-        epochs=epochs,
-        lr=lr,
-        batch_size=batch_size,
-        g_accum_gradients=g_accum_gradients,
-    )
+    params = dict(hparams=attr.asdict(hparams), argv=" ".join(sys.argv), epochs=epochs, lr=lr, batch_size=batch_size, g_accum_gradients=g_accum_gradients)
 
     params_s = json.dumps(params, indent=4, sort_keys=True, ensure_ascii=False)
     if is_main:
@@ -156,19 +149,12 @@ def main(
         print(f"device {device} initializing process group")
         os.environ["MASTER_PORT"] = master_port
         os.environ["MASTER_ADDR"] = master_addr
-        torch.distributed.init_process_group(
-            backend="nccl", rank=device_id, world_size=world_size
-        )
-        model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[device_id], output_device=device_id
-        )
+        torch.distributed.init_process_group(backend="nccl", rank=device_id, world_size=world_size)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device_id], output_device=device_id)
         print(f"process group for {device} initialized")
 
     def loss_fn(logits, ctx):
-        return cross_entropy(
-            input=logits[:, :-1].reshape([-1, logits.shape[-1]]),
-            target=ctx[:, 1:].reshape(-1),
-        )
+        return cross_entropy(input=logits[:, :-1].reshape([-1, logits.shape[-1]]), target=ctx[:, 1:].reshape(-1))
 
     def train_step(context: torch.LongTensor):
         """ Train step on one GPU.
@@ -191,31 +177,23 @@ def main(
     def train():
         nonlocal seen_tokens
         epoch_size = len(train_dataset) // step_tokens * step_tokens
-        pbar = tqdm.trange(
-            epochs, desc="epochs", dynamic_ncols=True, disable=not is_main
-        )
-        init_epoch_pbar = lambda: tqdm.trange(
-            epoch_size, dynamic_ncols=True, disable=not is_main
-        )
+        pbar = tqdm.trange(epochs, desc="epochs", dynamic_ncols=True, disable=not is_main)
+        init_epoch_pbar = lambda: tqdm.trange(epoch_size, dynamic_ncols=True, disable=not is_main)
         epoch_pbar = init_epoch_pbar()
         pbar.update(seen_tokens // epoch_size)
         pbar.refresh()
         epoch_pbar.update(seen_tokens % epoch_size)
         step = 0
         epoch, train_loss = 0, 0.0
-        context_gen = _gen_training_batch(
-            train_dataset, n_ctx=n_ctx, batch_size=batch_size * accum_gradients
-        )
+        context_gen = _gen_training_batch(train_dataset, n_ctx=n_ctx, batch_size=batch_size * accum_gradients)
         context = None
         while seen_tokens < epochs * epoch_size:
             if max_tokens and seen_tokens >= max_tokens:
-                print(f"max_tokens {max_tokens} reached, "f"saving and exiting")
+                print(f"max_tokens {max_tokens} reached, " f"saving and exiting")
 
                 if is_main:
                     log_writer_train.add_scalar("loss_iter", float(train_loss), step)
-                    log_writer_train.add_scalar(
-                        "perplexity_iter", float(np.exp(train_loss)), step
-                    )
+                    log_writer_train.add_scalar("perplexity_iter", float(np.exp(train_loss)), step)
                 save()
                 validate(epoch)
                 return
@@ -239,9 +217,7 @@ def main(
                 json_log_plots.write_event(run_path, step=seen_tokens, loss=train_loss)
                 loss_meter.reset()
                 log_writer_train.add_scalar("loss_iter", float(train_loss), step)
-                log_writer_train.add_scalar(
-                    "perplexity_iter", float(np.exp(train_loss)), step
-                )
+                log_writer_train.add_scalar("perplexity_iter", float(np.exp(train_loss)), step)
 
             if step % validate_every == 0:
                 validate(epoch)
@@ -253,9 +229,7 @@ def main(
 
                 if is_main:
                     log_writer_train.add_scalar("loss_epoch", float(train_loss), epoch)
-                    log_writer_train.add_scalar(
-                        "perplexity_epoch", float(np.exp(train_loss)), epoch
-                    )
+                    log_writer_train.add_scalar("perplexity_epoch", float(np.exp(train_loss)), epoch)
 
                 epoch += 1
 
@@ -278,9 +252,7 @@ def main(
         model.eval()
         losses = AverageMeter()
         with torch.no_grad():
-            for ctx in _valid_batch_iter(
-                valid_dataset, batch_size=batch_size, n_ctx=n_ctx
-            ):
+            for ctx in _valid_batch_iter(valid_dataset, batch_size=batch_size, n_ctx=n_ctx):
                 if not ctx:
                     continue
                 ctx = torch.LongTensor(ctx).to(device)
@@ -296,13 +268,7 @@ def main(
         for path in [model_path, optimizer_path]:
             if path.exists():
                 shutil.copy(path, run_path / f"{path.stem}-prev{path.suffix}")
-        torch.save(
-            {
-                "state_dict": _unwrapped_model(model).state_dict(),
-                "seen_tokens": seen_tokens,
-            },
-            model_path,
-        )
+        torch.save({"state_dict": _unwrapped_model(model).state_dict(), "seen_tokens": seen_tokens}, model_path)
         torch.save(optimizer.state_dict(), optimizer_path)
 
     if only_validate:
@@ -323,9 +289,7 @@ def main(
                 sys.exit(1)
 
 
-def batch_ids_generator(
-    data: np.ndarray, batch_size: int
-) -> Generator[List[int], None, None]:
+def batch_ids_generator(data: np.ndarray, batch_size: int) -> Generator[List[int], None, None]:
     gen = iter(it.cycle(data))
     while gen:
         yield [next(gen) for _ in range(batch_size)]
@@ -340,13 +304,7 @@ def _gen_training_batch(dataset: np.ndarray, n_ctx: int, batch_size: int):
 
 def _valid_batch_iter(dataset: np.ndarray, *, batch_size: int, n_ctx: int):
     start_indices = range(0, len(dataset) - n_ctx, n_ctx)
-    return _batch_it(
-        (
-            dataset[start_idx : start_idx + n_ctx]
-            for start_idx in tqdm.tqdm(start_indices, desc="validation", leave=False)
-        ),
-        batch_size=batch_size,
-    )
+    return _batch_it((dataset[start_idx : start_idx + n_ctx] for start_idx in tqdm.tqdm(start_indices, desc="validation", leave=False)), batch_size=batch_size)
 
 
 def _batch_it(it, batch_size: int):

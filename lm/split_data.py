@@ -31,15 +31,8 @@ def create_split_dirs(data_root: Path) -> Tuple[Path, Path, Path]:
     return train_data_path, valid_data_path, test_data_path
 
 
-def split_data2(
-    merged_file: Path,
-    spmodel: Path,
-    out_dir_root: Path = Path("data") / "gpt2" / "encoded",
-    train_val_ratio: float = 0.9,
-):
-    merged_file, out_dir_root, spmodel = list(
-        map(Path, [merged_file, out_dir_root, spmodel])
-    )
+def split_data2(merged_file: Path, spmodel: Path, out_dir_root: Path = Path("data") / "gpt2" / "encoded", train_val_ratio: float = 0.9):
+    merged_file, out_dir_root, spmodel = list(map(Path, [merged_file, out_dir_root, spmodel]))
     sp = sntpc.SentencePieceProcessor()
     sp.Load(str(spmodel))
 
@@ -63,9 +56,7 @@ def split_data2(
 
         with merged_file.open(encoding="utf-8") as fin:
             tokens, eots, eols = 0, 0, 0
-            pbar_text = (
-                lambda tokens, texts, lines: f"Reading texts: {tokens} tokens, {texts} texts, {lines} lines"
-            )
+            pbar_text = lambda tokens, texts, lines: f"Reading texts: {tokens} tokens, {texts} texts, {lines} lines"
 
             with tqdm(fin, pbar_text(0, 0, 0), wc(merged_file)) as pbar:
                 encoded: List[int] = []
@@ -127,14 +118,7 @@ def split_data(data_root: Path, out_dir_root: Path, train_val_ratio: float = 0.9
     valid_count = int(all_count * (1.0 - train_val_ratio))
     test_count = 1  # just because
 
-    logger.info(
-        "Data counts:\n\ttrain -",
-        train_count,
-        "\n\tvalid -",
-        valid_count,
-        "\n\ttest -",
-        test_count,
-    )
+    logger.info("Data counts:\n\ttrain -", train_count, "\n\tvalid -", valid_count, "\n\ttest -", test_count)
 
     filename = lambda idx: f"doc_{idx}.txt"
     for idx, train_path in enumerate(corpus_paths[:train_count]):

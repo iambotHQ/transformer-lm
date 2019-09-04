@@ -12,15 +12,10 @@ import multiprocessing as mp
 
 def sp_train():
     # TODO consider moving to fire
-    parser = argparse.ArgumentParser(
-        description="build sentencepiece model on train subset of the corpora"
-    )
+    parser = argparse.ArgumentParser(description="build sentencepiece model on train subset of the corpora")
     arg = parser.add_argument
     arg("corpora", nargs="+", help="corpus roots, containing train/valid/test splits")
-    arg(
-        "sp_text",
-        help="text file for sentencepiece model " "(will be used as-is if exists)",
-    )
+    arg("sp_text", help="text file for sentencepiece model " "(will be used as-is if exists)")
     arg("sp_model_prefix", help="path (prefix) to output sentencepiece model")
     arg("--vocab-size", type=int, default=50000)
     arg("--character-coverage", type=float, default=1.0)
@@ -36,10 +31,7 @@ def sp_train():
             train_root = corpus_root / "train"
             corpus_paths = list(train_root.rglob("*.txt"))
             if not corpus_paths:
-                parser.error(
-                    f"Corpus train split {train_root} looks empty, "
-                    f"no text files found"
-                )
+                parser.error(f"Corpus train split {train_root} looks empty, " f"no text files found")
             paths.extend(corpus_paths)
         try:
             with sp_text.open("wt", encoding="utf8") as sp_text_file:
@@ -73,17 +65,11 @@ def sp_train():
 
 
 def sp_encode():
-    parser = argparse.ArgumentParser(
-        description="encode corpus with a sentencepiece model"
-    )
+    parser = argparse.ArgumentParser(description="encode corpus with a sentencepiece model")
     arg = parser.add_argument
     arg("corpora", nargs="+", help="corpus roots, containing train/valid/test splits")
     arg("sp_model", help="path to output model")
-    arg(
-        "output",
-        help="path to the output directory, "
-        "which will contain train.npy, valid.npy and test.npy",
-    )
+    arg("output", help="path to the output directory, " "which will contain train.npy, valid.npy and test.npy")
     args = parser.parse_args()
 
     sp_model = spm.SentencePieceProcessor()
@@ -100,10 +86,7 @@ def sp_encode():
             split_root = corpus_root / split
             split_paths = list(split_root.rglob("*.txt"))
             if not split_paths:
-                parser.error(
-                    f"Corpus {split} split {split_root} looks empty, "
-                    f"no text files found"
-                )
+                parser.error(f"Corpus {split} split {split_root} looks empty, " f"no text files found")
 
             def append_and_clear(x):
                 encoded_splits[split].append(np.array(x, dtype=dtype))
