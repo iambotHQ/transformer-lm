@@ -19,8 +19,8 @@ class OutputGetters:
     mean: output_getter_type = lambda output: output.mean(dim=1)
     raw: output_getter_type = lambda output: output
     concat_avg_max_pool: output_getter_type = lambda output, avg_kwargs, max_kwargs: torch.cat(
-        (torch.nn.functional.avg_pool1d(output, **avg_kwargs),
-         torch.nn.functional.max_pool1d(output, **max_kwargs)))
+        (torch.nn.functional.adaptive_avg_pool1d(output, **avg_kwargs),
+         torch.nn.functional.adaptive_max_pool1d(output, **max_kwargs)))
 
     @classmethod
     def by_name(cls, name: str) -> output_getter_type:
