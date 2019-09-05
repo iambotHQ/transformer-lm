@@ -2,7 +2,7 @@
 OpenAI's GPT-2 ported to PyTorch.
 """
 import math
-from typing import *
+from typing import Callable
 
 import attr
 import torch
@@ -17,9 +17,11 @@ class OutputGetters:
     first: output_getter_type = lambda output: output[:, 0]
     last: output_getter_type = lambda output: output[:, -1]
     mean: output_getter_type = lambda output: output.mean(dim=1)
+    raw: output_getter_type = lambda output: output
+    concat_avg_max_pool: output_getter_type = lambda output: torch.cat((torch.nn.functional.avg_pool2d(output), torch.nn.functional.max_pool2d(output)))
 
     @classmethod
-    def by_name(cls, name: str):
+    def by_name(cls, name: str) -> output_getter_type:
         return getattr(cls, name)
 
 
@@ -35,7 +37,11 @@ class HParams:
 
 
 class Model(nn.Module):
-    def __init__(self, hparams: HParams, text_gen_mode: bool = False, encoder_mode: bool = False, hidden_getter: output_getter_type = OutputGetters.mean):
+    def __init__(self,
+                 hparams: HParams,
+                 text_gen_mode: bool = False,
+                 encoder_mode: bool = False,
+                 hidden_getter: output_getter_type = OutputGetters.mean):
         super().__init__()
         self._text_gen_mode = text_gen_mode
         self._hidden_getter = hidden_getter
@@ -48,7 +54,8 @@ class Model(nn.Module):
         self.wte = nn.Embedding(hparams.n_vocab, hparams.n_embed)
 
         nn.init.normal_(self.wte.weight, std=0.02)
-        self.blocks = nn.ModuleList([Block(hparams) for _ in range(hparams.n_layer)])
+        self.blocks = nn.ModuleList(
+            [Block(hparams) for _ in range(hparams.n_layer)])
         self.ln_f = Norm(self.hparams.n_hidden)
 
         if hparams.n_hidden != hparams.n_embed:
@@ -71,16 +78,18 @@ class Model(nn.Module):
         presents = []
         for i, block in enumerate(self.blocks):
             if self.hparams.gradient_checkpointing:
-                h, present = torch.utils.checkpoint.checkpoint(block, h, past[:, i] if past is not None else None)
+                h, present = torch.utils.checkpoint.checkpoint(
+                    block, h, past[:, i] if past is not None else None)
             else:
-                h, present = block(h, past=past[:, i] if past is not None else None)
+                h, present = block(
+                    h, past=past[:, i] if past is not None else None)
             # presents.append(present)
         h = self.ln_f(h)
 
         if self.out_proj:
             h = self.out_proj(h)
 
-        output = {"hidden": self._hidden_getter(h), "all_hidden": h}
+        output = {"hidden": self._hidden_getter(h)}
 
         if self._encoder_mode:
             return output["hidden"]
@@ -113,7 +122,6 @@ class Block(nn.Module):
 class Norm(nn.Module):
     """ Normalize to mean = 0, std = 1, then do a diagonal affine transform.
     """
-
     def __init__(self, n_features, *, dim=-1, epsilon=1e-5):
         super().__init__()
         self.n_features = n_features
@@ -239,4 +247,5 @@ def gelu(x, c=math.sqrt(2 / math.pi)):
 
 
 def position_for(batch_size, n_steps, past_length, device=None):
-    return torch.arange(past_length, n_steps + past_length, device=device).unsqueeze(0).repeat(batch_size, 1)
+    return torch.arange(past_length, n_steps + past_length,
+                        device=device).unsqueeze(0).repeat(batch_size, 1)
