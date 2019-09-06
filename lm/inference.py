@@ -26,15 +26,15 @@ class ModelWrapper:
         cls,
         root: Path,
         device: Union[str, torch.device],
-        text_gen_mode: bool = False,
+        logits: bool,
+        presents:bool,
         sp_model: Optional[spm.SentencePieceProcessor] = None,
-        encoder_mode: bool = False,
     ):
         sp_model = spm.SentencePieceProcessor()
         sp_model.load(str(root / "sp.model"))
         hparams = json.loads((root / "params.json").read_text())["hparams"]
         hparams.setdefault("n_hidden", hparams["n_embed"])
-        model = Model(HParams(**hparams), text_gen_mode, encoder_mode).to(device)
+        model = Model(HParams(**hparams), logits, presents, OutputGetters.raw).to(device)
         state = torch.load(root / "model.pt", map_location=device)
         state_dict = fixed_state_dict(state["state_dict"])
         model.load_state_dict(state_dict)
@@ -42,11 +42,11 @@ class ModelWrapper:
 
     @classmethod
     def load_encoder(
-        cls, model_path: Path, text_gen_mode: bool, encoder_mode: bool, device: torch.device, output_getter=OutputGetters.mean, params=default_hparams
+        cls, model_path: Path, logits: bool, presents:bool, device: torch.device, output_getter=OutputGetters.mean, params=default_hparams
     ):
         if isinstance(output_getter, str):
             output_getter = getattr(OutputGetters, output_getter)
-        model = Model(params, text_gen_mode, encoder_mode, output_getter)
+        model = Model(params, logits, presents, output_getter)
         state_dict = fixed_state_dict(torch.load(model_path, map_location=device)["state_dict"])
         model.load_state_dict(state_dict)
         model.eval()
