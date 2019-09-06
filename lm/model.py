@@ -47,13 +47,13 @@ class HParams:
 class Model(nn.Module):
     def __init__(self,
                  hparams: HParams,
-                 text_gen_mode: bool = False,
-                 encoder_mode: bool = False,
+                 logits: bool = False,
+                 presents: bool = False,
                  hidden_getter: output_getter_type = OutputGetters.mean):
         super().__init__()
-        self._text_gen_mode = text_gen_mode
+        self._logits = logits
+        self._presents = presents
         self._hidden_getter = hidden_getter
-        self._encoder_mode = encoder_mode
         self.hparams = hparams
 
         self.wpe = nn.Embedding(hparams.n_ctx, hparams.n_embed)
@@ -91,7 +91,7 @@ class Model(nn.Module):
             else:
                 h, present = block(
                     h, past=past[:, i] if past is not None else None)
-            # presents.append(present)
+            presents.append(present)
         h = self.ln_f(h)
 
         if self.out_proj:
@@ -99,10 +99,10 @@ class Model(nn.Module):
 
         output = {"hidden": self._hidden_getter(h)}
 
-        if self._encoder_mode:
-            return output["hidden"]
+        if self._presents:
+            output['presents'] = torch.stack(tuple(presents), dim=1)
 
-        if self._text_gen_mode:
+        if self._logits:
             h_flat = h.reshape([batch_size * n_ctx, self.hparams.n_embed])
             logits = torch.matmul(h_flat, self.wte.weight.t())
             logits = logits.reshape([batch_size, n_ctx, self.hparams.n_vocab])
