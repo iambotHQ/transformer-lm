@@ -27,7 +27,7 @@ class ModelWrapper:
         root: Path,
         device: Union[str, torch.device],
         logits: bool,
-        presents:bool,
+        presents: bool,
         sp_model: Optional[spm.SentencePieceProcessor] = None,
     ):
         sp_model = spm.SentencePieceProcessor()
@@ -42,7 +42,13 @@ class ModelWrapper:
 
     @classmethod
     def load_encoder(
-        cls, model_path: Path, logits: bool, presents:bool, device: torch.device, output_getter=OutputGetters.mean, params=default_hparams
+        cls,
+        model_path: Path,
+        logits: bool,
+        presents: bool,
+        device: torch.device,
+        output_getter=OutputGetters.mean,
+        params=default_hparams,
     ):
         if isinstance(output_getter, str):
             output_getter = getattr(OutputGetters, output_getter)
@@ -87,9 +93,18 @@ class ModelWrapper:
         for what would come after the last token.
         """
         next_log_probs = self.get_log_probs(tokens)[-1]
-        return sorted(((float(next_log_probs[i]), self.id_to_token(i)) for i in next_log_probs.argsort()[-top_k:]), reverse=True)
+        return sorted(
+            ((float(next_log_probs[i]), self.id_to_token(i)) for i in next_log_probs.argsort()[-top_k:]), reverse=True
+        )
 
-    def generate_tokens(self, tokens_prefix: List[str], tokens_to_generate: int, top_k: int, no_eot: bool = False, stop_on_eot: bool = False) -> List[str]:
+    def generate_tokens(
+        self,
+        tokens_prefix: List[str],
+        tokens_to_generate: int,
+        top_k: int,
+        no_eot: bool = False,
+        stop_on_eot: bool = False,
+    ) -> List[str]:
         tokens = ["<endoftext>", *list(tokens_prefix)]
         tok_print = lambda tok: print(tok, end="", flush=True)
         tok_print(f"{self.sp_model.DecodePieces(tokens_prefix)} |")
@@ -117,7 +132,9 @@ class ModelWrapper:
             tokens.append(next_token)
 
             normalized_token: str = next_token.replace(END_OF_LINE, "\n").replace(END_OF_TEXT, "\n").replace("▁", " ")
-            if (len(normalized_token) > 1 and normalized_token[1] in ending_puncts) or (len(tokens) > 1 and tokens[-2].replace("▁", "") in starting_puncts):
+            if (len(normalized_token) > 1 and normalized_token[1] in ending_puncts) or (
+                len(tokens) > 1 and tokens[-2].replace("▁", "") in starting_puncts
+            ):
                 normalized_token = normalized_token.replace(" ", "")
             tok_print(normalized_token)
         print()

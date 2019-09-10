@@ -31,7 +31,12 @@ def create_split_dirs(data_root: Path) -> Tuple[Path, Path, Path]:
     return train_data_path, valid_data_path, test_data_path
 
 
-def split_data2(merged_file: Path, spmodel: Path, out_dir_root: Path = Path("data") / "gpt2" / "encoded", train_val_ratio: float = 0.9):
+def split_data2(
+    merged_file: Path,
+    spmodel: Path,
+    out_dir_root: Path = Path("data") / "gpt2" / "encoded",
+    train_val_ratio: float = 0.9,
+):
     merged_file, out_dir_root, spmodel = list(map(Path, [merged_file, out_dir_root, spmodel]))
     sp = sntpc.SentencePieceProcessor()
     sp.Load(str(spmodel))

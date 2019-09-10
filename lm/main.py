@@ -49,6 +49,7 @@ def main(
     max_tokens=None,
     master_port="40390",
     master_addr="127.0.0.1",
+    checkpoint_every=5,  # epochs
     sublog=None,
     # These are set automatically when multiple GPUs are available
     device_id=None,
@@ -88,6 +89,7 @@ def main(
 
         log_writer_train = SummaryWriter(logdir / "train", max_queue=5, flush_secs=3)
         log_writer_valid = SummaryWriter(logdir / "valid", max_queue=5, flush_secs=3)
+
     sp_model = spm.SentencePieceProcessor()
     sp_model.load(sp_model_path)
 
@@ -100,7 +102,15 @@ def main(
         n_layer=n_layer,
         gradient_checkpointing=gradient_checkpointing,
     )
-    params = dict(hparams=attr.asdict(hparams), argv=" ".join(sys.argv), epochs=epochs, lr=lr, batch_size=batch_size, g_accum_gradients=g_accum_gradients)
+
+    params = dict(
+        hparams=attr.asdict(hparams),
+        argv=" ".join(sys.argv),
+        epochs=epochs,
+        lr=lr,
+        batch_size=batch_size,
+        g_accum_gradients=g_accum_gradients,
+    )
 
     params_s = json.dumps(params, indent=4, sort_keys=True, ensure_ascii=False)
     if is_main:
@@ -120,7 +130,7 @@ def main(
     else:
         device = torch.device("cpu")
 
-    model = Model(hparams, True).to(device)
+    model = Model(hparams, True, False).to(device)
     cross_entropy = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     loss_meter = AverageMeter()
@@ -132,14 +142,14 @@ def main(
         """ Load model, update seen_tokens value
         """
         nonlocal seen_tokens
-        state = torch.load(model_path)
+        state = torch.load(model_path, map_location=device)
         if "seen_tokens" in state:
             seen_tokens = state["seen_tokens"]
         else:  # legacy format
             seen_tokens = state["step"] * step_tokens
         state_dict = fixed_state_dict(state["state_dict"])
         model.load_state_dict(state_dict)
-        optimizer.load_state_dict(torch.load(optimizer_path))
+        optimizer.load_state_dict(torch.load(optimizer_path, map_location=device))
         print(f"Resuming from seen_tokens {seen_tokens:,}")
 
     if model_path.exists():
@@ -185,15 +195,13 @@ def main(
         epoch_pbar.update(seen_tokens % epoch_size)
         step = 0
         epoch, train_loss = 0, 0.0
-        context_gen = _gen_training_batch(train_dataset, n_ctx=n_ctx, batch_size=batch_size * accum_gradients)
+        # context_gen = _gen_training_batch(train_dataset, n_ctx=n_ctx, batch_size=batch_size * accum_gradients)
         context = None
+
+        avg_epoch_loss, avg_epoch_perplexity = [], []
         while seen_tokens < epochs * epoch_size:
             if max_tokens and seen_tokens >= max_tokens:
                 print(f"max_tokens {max_tokens} reached, " f"saving and exiting")
-
-                if is_main:
-                    log_writer_train.add_scalar("loss_iter", float(train_loss), step)
-                    log_writer_train.add_scalar("perplexity_iter", float(np.exp(train_loss)), step)
                 save()
                 validate(epoch)
                 return
@@ -212,12 +220,19 @@ def main(
             if step % save_every == 0:
                 save()
 
+            if (epoch + 1) % checkpoint_every == 0:
+                save(f"model-{epoch}epochs.pt")
+
             if is_main and step % log_every == 0:
                 train_loss = loss_meter.mean()
                 json_log_plots.write_event(run_path, step=seen_tokens, loss=train_loss)
                 loss_meter.reset()
-                log_writer_train.add_scalar("loss_iter", float(train_loss), step)
-                log_writer_train.add_scalar("perplexity_iter", float(np.exp(train_loss)), step)
+
+                avg_epoch_loss.append(train_loss)
+                avg_epoch_perplexity.append(np.exp(train_loss))
+
+                log_writer_train.add_scalar("loss_iter", float(train_loss), seen_tokens)
+                log_writer_train.add_scalar("perplexity_iter", float(np.exp(train_loss)), seen_tokens)
 
             if step % validate_every == 0:
                 validate(epoch)
@@ -228,8 +243,12 @@ def main(
                 epoch_pbar = init_epoch_pbar()
 
                 if is_main:
-                    log_writer_train.add_scalar("loss_epoch", float(train_loss), epoch)
-                    log_writer_train.add_scalar("perplexity_epoch", float(np.exp(train_loss)), epoch)
+                    log_writer_train.add_scalar("loss_epoch", sum(avg_epoch_loss) / len(avg_epoch_loss), epoch)
+                    log_writer_train.add_scalar(
+                        "perplexity_epoch", sum(avg_epoch_perplexity) / len(avg_epoch_perplexity), epoch
+                    )
+                    avg_epoch_loss.clear()
+                    avg_epoch_perplexity.clear()
 
                 epoch += 1
 
@@ -262,13 +281,18 @@ def main(
         model.train()
         return losses.mean()
 
-    def save():
+    def save(name=None):
         if not is_main:
             return
         for path in [model_path, optimizer_path]:
             if path.exists():
                 shutil.copy(path, run_path / f"{path.stem}-prev{path.suffix}")
-        torch.save({"state_dict": _unwrapped_model(model).state_dict(), "seen_tokens": seen_tokens}, model_path)
+        model_to_save = {"state_dict": _unwrapped_model(model).state_dict(), "seen_tokens": seen_tokens}
+
+        if name:
+            torch.save(model_to_save, run_path / name)
+
+        torch.save(model_to_save, model_path)
         torch.save(optimizer.state_dict(), optimizer_path)
 
     if only_validate:
@@ -304,7 +328,13 @@ def _gen_training_batch(dataset: np.ndarray, n_ctx: int, batch_size: int):
 
 def _valid_batch_iter(dataset: np.ndarray, *, batch_size: int, n_ctx: int):
     start_indices = range(0, len(dataset) - n_ctx, n_ctx)
-    return _batch_it((dataset[start_idx : start_idx + n_ctx] for start_idx in tqdm.tqdm(start_indices, desc="validation", leave=False)), batch_size=batch_size)
+    return _batch_it(
+        (
+            dataset[start_idx : start_idx + n_ctx]
+            for start_idx in tqdm.tqdm(start_indices, desc="validation", leave=False)
+        ),
+        batch_size=batch_size,
+    )
 
 
 def _batch_it(it, batch_size: int):
