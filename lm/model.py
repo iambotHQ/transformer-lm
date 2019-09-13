@@ -14,14 +14,20 @@ output_getter_type = Callable[..., torch.Tensor]
 
 
 class OutputGetters:
-    first: output_getter_type = lambda output: output[:, 0]
-    last: output_getter_type = lambda output: output[:, -1]
-    mean: output_getter_type = lambda output: output.mean(dim=1)
-    raw: output_getter_type = lambda output: output
+    first: output_getter_type = lambda output: output[-1][:, 0]
+    last: output_getter_type = lambda output: output[-1][:, -1]
+    mean: output_getter_type = lambda output: output[-1].mean(dim=1)
+    raw: output_getter_type = lambda output: output[-1]
 
     @staticmethod
-    def concat_avg_max_pool(output, avg_kwargs, max_kwargs) -> torch.Tensor:
-        output = output.permute(0, 2, 1)
+    def last_hidden_concat_avg_max_pool(output, avg_kwargs,
+                                        max_kwargs) -> torch.Tensor:
+        output = output[-1].permute(0, 2, 1)
+        return OutputGetters._concat_avg_max_pool(output, avg_kwargs,
+                                                  max_kwargs)
+
+    @staticmethod
+    def _concat_avg_max_pool(output, avg_kwargs, max_kwargs) -> torch.Tensor:
         output = torch.cat(
             (
                 torch.nn.functional.adaptive_avg_pool1d(output, **avg_kwargs),
@@ -30,6 +36,17 @@ class OutputGetters:
             dim=1,
         )
         return output.squeeze(2)
+
+    @staticmethod
+    def pseudo_residual(output) -> torch.Tensor:
+        return torch.stack(output,
+                           dim=0)[:, :, -1, :].permute(1, 0, 2).flatten(1, 2)
+
+    @staticmethod
+    def blocks_concat_avg_max_pool(output, avg_kwargs, max_kwargs):
+        output = torch.stack(output, dim=0)[:, :, -1, :].permute(1, 2, 0)
+        return OutputGetters._concat_avg_max_pool(output, avg_kwargs,
+                                                  max_kwargs)
 
     @classmethod
     def by_name(cls, name: str) -> output_getter_type:
@@ -49,11 +66,11 @@ class HParams:
 
 class Model(nn.Module):
     def __init__(
-        self,
-        hparams: HParams,
-        logits: bool = False,
-        presents: bool = False,
-        hidden_getter: output_getter_type = OutputGetters.mean,
+            self,
+            hparams: HParams,
+            logits: bool = False,
+            presents: bool = False,
+            hidden_getter: output_getter_type = OutputGetters.mean,
     ):
         super().__init__()
         self._logits = logits
@@ -67,7 +84,8 @@ class Model(nn.Module):
         self.wte = nn.Embedding(hparams.n_vocab, hparams.n_embed)
 
         nn.init.normal_(self.wte.weight, std=0.02)
-        self.blocks = nn.ModuleList([Block(hparams) for _ in range(hparams.n_layer)])
+        self.blocks = nn.ModuleList(
+            [Block(hparams) for _ in range(hparams.n_layer)])
         self.ln_f = Norm(self.hparams.n_hidden)
 
         if hparams.n_hidden != hparams.n_embed:
@@ -88,18 +106,22 @@ class Model(nn.Module):
 
         # Transformer
         presents = []
+        hiddens = []
         for i, block in enumerate(self.blocks):
             if self.hparams.gradient_checkpointing:
-                h, present = torch.utils.checkpoint.checkpoint(block, h, past[:, i] if past is not None else None)
+                h, present = torch.utils.checkpoint.checkpoint(
+                    block, h, past[:, i] if past is not None else None)
             else:
-                h, present = block(h, past=past[:, i] if past is not None else None)
+                h, present = block(
+                    h, past=past[:, i] if past is not None else None)
+            hiddens.append(h)
             presents.append(present)
         h = self.ln_f(h)
 
         if self.out_proj:
             h = self.out_proj(h)
 
-        output = {"hidden": self._hidden_getter(h)}
+        output = {"hidden": self._hidden_getter(hiddens)}
 
         if self._presents:
             output["presents"] = torch.stack(tuple(presents), dim=1)
@@ -132,7 +154,6 @@ class Block(nn.Module):
 class Norm(nn.Module):
     """ Normalize to mean = 0, std = 1, then do a diagonal affine transform.
     """
-
     def __init__(self, n_features, *, dim=-1, epsilon=1e-5):
         super().__init__()
         self.n_features = n_features
@@ -258,4 +279,5 @@ def gelu(x, c=math.sqrt(2 / math.pi)):
 
 
 def position_for(batch_size, n_steps, past_length, device=None):
-    return torch.arange(past_length, n_steps + past_length, device=device).unsqueeze(0).repeat(batch_size, 1)
+    return torch.arange(past_length, n_steps + past_length,
+                        device=device).unsqueeze(0).repeat(batch_size, 1)
