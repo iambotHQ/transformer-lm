@@ -2,7 +2,7 @@
 OpenAI's GPT-2 ported to PyTorch.
 """
 import math
-from typing import Callable
+from typing import Callable, cast
 
 import attr
 import torch
@@ -15,10 +15,21 @@ default_pool_args = {"output_size": 1}
 
 
 class OutputGetters:
-    first: output_getter_type = lambda output: output[-1][:, 0]
-    last: output_getter_type = lambda output: output[-1][:, -1]
-    mean: output_getter_type = lambda output: output[-1].mean(dim=1)
-    raw: output_getter_type = lambda output: output[-1]
+    @staticmethod
+    def first(output) -> torch.Tensor:
+        return cast(torch.Tensor, output[-1][:, 0])
+
+    @staticmethod
+    def last(output) -> torch.Tensor:
+        return output[-1][:, -1]
+
+    @staticmethod
+    def mean(output) -> torch.Tensor:
+        return output[-1].mean(dim=1)
+
+    @staticmethod
+    def raw(output) -> torch.Tensor:
+        return output[-1]
 
     @staticmethod
     def last_hidden_concat_avg_max_pool(
