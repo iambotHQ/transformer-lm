@@ -60,9 +60,9 @@ class OutputGetters:
         output = torch.stack(output, dim=0)[:, :, -1, :].permute(1, 2, 0)
         return OutputGetters._concat_avg_max_pool(output, avg_kwargs, max_kwargs)
 
-    @classmethod
-    def by_name(cls, name: str) -> output_getter_type:
-        return getattr(cls, name)
+    @staticmethod
+    def by_name(name: str) -> output_getter_type:
+        return getattr(OutputGetters, name)
 
 
 @attr.s(auto_attribs=True, frozen=True)
