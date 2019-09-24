@@ -62,7 +62,7 @@ class OutputGetters:
 
     @staticmethod
     def by_name(name: str) -> output_getter_type:
-        return getattr(OutputGetters, name)
+        return getattr(OutputGetters, name, OutputGetters.raw)
 
 
 @attr.s(auto_attribs=True, frozen=True)
